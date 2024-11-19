@@ -1,0 +1,432 @@
+12.3 Using the Library: A Text-Query Program:
+    This is a text-query program made in C++ for searching for a word in a file, and printing the number of its appearances, and the lines with their numbers at which the word appears. If the word appears multiple times on the same line, the line still appears only once. Lines should be displayed in the ascending order.
+
+            Its output on the word "element" should look like that:
+                element occurs 112 times
+                    (line 36) A set element contains only a key;
+                    (line 158) operator creates a new element
+                    (line 160) Regardless of whether the element
+                    (line 168) When we fetch an element from a map, we
+                    (line 214) If the element is not found, find returns
+                    ... The rest ...
+
+            Just reading the description is too boring, so first, I will try to make it by myself instead, and after making it, I will read the description from the book, and compare it to mine. This's the plan.
+
+            Design:
+                I can think of two possible implementations here:
+                    1: The first variant, is to simply go through the text line by line, counting lines, searching for the target word to appear, counting word appearances, adding the number of the line as the key, and the text of the line as the value of the item, adding the item to the ordered map, and when all the lines are processed, print the count of found words, and all the items of the map in their order of insertion.
+                    2: The second variant, is to instead of hoarding all the lines before printing them, print the lines at the time of their appearance, and update the count of lines in real time.
+
+                Pros and Cons:
+                    1: It's easier to make, it takes n time for printing in the worst case, it iterates n*2 times through the lines (to search through lines and then to print them) in the worst case, and requires space for n lines in the worst case.
+                    2: It's harder to make (I don't know how to overwrite an already printed character from n lines back), it takes n*2 time for printing in the worst case (1 to refresh the count and 2 to write the line), it iterates n times through the text (it searches and prints lines at the same time) in the worst case, and requires space for 1 line in the worst case (I need to store the current line somewhere).
+
+                The second variant sounds like a winner to me. The only question is how to implement printing. How to overwrite a character that was written a variable number of characters back? How much time does it take? Should I use another thread, so the main one won't be blocked by the terminal?
+
+                Terminal Control Characters:
+                    I found out that you can use \r and \b control characters to tell a terminal to get back over text, and overwrite an already written text. It means that terminals can be controlled by passing characters to them. I guess I should learn more about their capabilities.
+
+                    Some of Still Common ASCII Control Characters:
+                        https://en.wikipedia.org/wiki/Control_character
+
+                        0x00 Null \0:
+                            Intended to be an ignored character, but now is commonly used to mark the end of a string in memory.
+
+                        0x07 Bell \a:
+                            May cause the device to emit a warning such as a bell or beep sound or a screen flashing.
+
+                        0x08 Backspace \b:
+                            May overprint the previous character.
+
+                            Example:
+                                std::cout << "a\bbo\bc\n";  // "bc"
+
+                        0x09 horizontal Tab \t:
+                            Moves the printing position right to the next tabular (табличный) stop.
+
+                            Example:
+                                std::cout << "what\t12\twho\n";  // "what    12      who"
+
+                        0x0A Line Feed \n:
+                            Moves the cursor down one line, or to the left edge and down. Usually used as the end of a line.
+
+                        0x0B Vertical Tab \v:
+                            Vertical tabulation (составление таблицы).
+
+                            Example:
+                                >>> std::cout << "what\vwhere\vwho\n";
+                                what
+                                    where
+                                        who
+
+                        0x0C Form Feed \f:
+                            Causes printer to eject paper to the top of the next page, or a video terminal to clear the screen.
+                            In my terminal, it works the same way as \v, for some reason.
+
+                            Example:
+                                >>> std::cout << "what\ff\n";
+                                what
+                                    f
+
+                        0x0D Carriage Return \r:
+                            Moves the printing position to the start of the current line, allowing overprinting. Is used by old MAC-OSes as the EOL character. CP/M-80 and its derivatives, and Application Layer protocols such as FTP, SMTP, and HTTP, use CR+LF instead.
+
+                            Example:
+                                >>> std::cout << "what\rwhere\rwho\n";
+
+                        0x1A Control-Z \032 \x1A:
+                            Acts as an end-of-file for the Windows text-mode file I/O. It also used in place of characters that recognized to be invalid.
+
+                            Example:
+                                >>> std::cout << "what\032where\x1Awho\n";
+                                what▒where▒who
+
+                        0x1B Escape \e ^[:
+                            Introduces an escape sequence. This sequence may do different things on different terminals. One of the most popular escape sequences are the ANSI escape sequences.
+
+                    ANSI Escape Code:
+                        https://en.wikipedia.org/wiki/ANSI_escape_code
+                        https://gist.github.com/fnky/458719343aabd01cfb17a3a4f7296797
+
+                        ANSI escape sequences are standard for in-band signaling to control cursor location, color, font styling, and other options on video text terminals and terminal emulators. Certain sequences of bytes, most starting with ASCII escape character and a bracket "[" character. The terminal interprets these sequences as commands, rather than text to display verbatim.
+
+                        ANSI escape sequences were introduced in 1970s to replace vendor-specific sequences, and became widespread in 1980s. In 21th century, most of the terminal emulators and command consoles support at least a portion of the ANSI standard.
+                        In 2016, Microsoft released the Windows 10 version 1511 update which unexpectedly implemented support for ANSI escape sequences, over three decades after the debut of Windows.
+
+                        Escape sequences only can contain bytes in the range of 0x20—0x7F.
+                        C0 Control Codes are singular control characters (LF, CR, etc.). C1 control codes are escape sequences.
+                        If the escape sequence is followed by a byte from the 0x40 to 0x5F range, its type is Fe. Fe escape sequences can be represented as a single byte in the range 0x80–0x9F. Most of the modern character encodings use bytes 0x80–0x9F for other purposes, so in order to not interfere with them, Fe escape sequences are usually written as sequences.
+
+                        Cursor Controls:
+                            \x1B[H:
+                                Here, "\x1B" is the escape character, "[" is the control sequence introducer, which starts most of the sequences, and "H" is the name of the action. The "\x1B[H" sequence moves the cursor to its home position (0, 0).
+
+                                Example:
+                                    cout << "\x1B[Hwhat\n";
+                                    ...
+                                    whato@fedo-MS-7D46:/media/fedo/Cool/programming/cpp/code_base_1/twelfth_chapter$
+                                    !fedo@fedo-MS-7D46:/media/fedo/Cool/programming/cpp/code_base_1/twelfth_chapter$  !(I'm here)!
+                                    !fedo@fedo-MS-7D46:/media/fedo/Cool/programming/cpp/code_base_1/twelfth_chapter$ ./exec_1.sh word_query/wqp1
+
+                                In my terminal, it moves the cursor to the place before the command that executed this escape sequence. Interesting.
+
+                            \x1B[{line};{column}H or \x1B[{line};{column}f:
+                                Moves the cursor to the line {line} and the column {column}. H and f do the same thing. Semicolon ";" delimits the arguments.
+
+                                Example:
+                                    << "\x1B[6;15H"
+                                    ...
+                                    !fedo@fedo-MS-7D46:/media/fedo/Cool/programming/cpp/code_base_1/twelfth_chapter$ ./exec_1.sh word_query/wqp1
+                                    bc
+                                    what    12      who
+                                    what          !fedo@fedo-MS-7D46:/media/fedo/Cool/programming/cpp/code_base_1/twelfth_chapter$
+
+                                Not sure where the line 6 is (maybe it's 6th line from the top of the screen?), but the cursor was indeed moved to the 15th column.
+
+                            \x1B[#D:
+                                Moves the cursor # characters left.
+
+                                Example:
+                                    << "Whose\x1B[2Dre\n"
+                                    ...
+
+                            ESC[#A:
+                                Moves the cursor # lines up.
+
+                                Example:
+                                    "where\n\n\n\x1B[3Awho\n"
+                                    ...
+
+                            (ESC[s and ESC[u) or (ESC 7 and ESC 8):
+                                ESC[s or "ESC 7" allows to save the current cursor position, and "ESC[u" or "ESC 8" allows to restore the last saved cursor position.
+                                Not all terminals support them, and not all of these who support them, support both pairs at the same time. My terminal supports only ESC[s and ESC[u.
+
+                                Example:
+                                    "cock\x1B[serel\x1B[u and ball\x1B[sade\x1B[us.  \n"
+                                    ...
+
+                            There are also methods to go left and down the terminal, and minor variants of the previous sequences.
+
+                            You should note, that some sequences, like saving and restoring cursors, are private sequences and are not standardized.
+
+                        Erase Functions:
+                            ESC[2J:
+                                Erases the whole screen. "screen" is the screen of the terminal, which means, that it erases only the visible part of printed text, when everything else stays the same.
+
+                                Example:
+                                    "Some\nText\nWho\nCares\n\x1B[2J\n"
+                                    ...
+
+                                    !fedo@fedo-MS-7D46:/media/fedo/Cool/programming/cpp/code_base_1/twelfth_chapter$  // The whole screen was wiped.
+
+                            ESC[2K:
+                                Erases an entire line. The cursor stays at the same position, though.
+
+                                Example:
+                                    << "The first line.\nThe second line\x1B[2K and the rest of the second line.\n"
+                                    ...
+                                    The first line.
+                                                    and the rest of the second line.
+                                    !fedo@fedo-MS-7D46:/media/fedo/Cool/programming/cpp/code_base_1/twelfth_chapter$
+
+                        Colors / Graphics Mode:
+                            ESC[{...}m:
+                                ESC[m sets the graphics mode for the text after it. Each mode is associated with its own number. Several modes can be set at once by separating them by a semicolon. {...} means that the number of modes is variable. "m" ends the sequence.
+
+                                There are modes to enable and disable some feature. For example, the mode "3" makes text italic, and the mode "23" disables the mode "3".
+                                The mode "0" resets all modes and colors.
+
+                                Both dim and bold modes are reset with the ESC[22m sequence. The ESC[21m sequence is a non-specified sequence for double underline mode and only work in some terminals and is reset with ESC[24m.
+
+                                Example:
+                                    "\x1B[1;3mYarr! \x1B[23mWhat? \x1B[22mNothing.\n"
+                                    ...
+                                    Yarr! What? Nothing.  // ("Yarr!" is bold and italic, "What?" is just bold, and "Nothing." is normal.)
+
+                            You should note, that some of terminals don't support some of the graphic mode sequences.
+
+                            Colors:
+                                Colors can be applied by the same mode specification method. Background and foreground colors are specified by separate modes.
+
+                                The Base 8 Color Modes:
+                                    Color|Foreground|Background
+                                    Black(чёрный)|30|40
+                                    Red(красный)|31|41
+                                    Green(зелёный)|32|42
+                                    Yellow(жёлтый)|33|43
+                                    Blue(синий)|34|44
+                                    Magenta(пурпурный)|35|45
+                                    Cyan(голубой)|36|46
+                                    White(белый)|37|47
+
+                                    And there are also Default|39|49 and Reset|0|0, which set the color to default, or set the color to default, and also resets all the other modes.
+
+                                    Example:
+                                        << " \x1B[35;46mAnd we bring fire, sing fire\x1B[39;49m\n"  // Magenta|Cyan
+                                        "\x1B[30;47mScream fire and forgive\x1B[39;49m\n"  // Black|White
+                                        "\x1B[31;42mForgiven the liar, by fire we live\x1B[39;49m\n"  // Red|Green
+                                        "\x1B[33;44mWe bring fire, sing fire\x1B[39;49m\n"  // Yellow|Blue
+                                        "\x1B[36;45mScream fire and forgive\x1B[39;49m\n"  // Cyan|Magenta
+                                        "The last of our blood we will give\n"  // Default
+                                        ...
+                                        And we bring fire, sing fire
+                                        Scream fire and forgive
+                                        Forgiven the liar, by fire we live
+                                        We bring fire, sing fire
+                                        Scream fire and forgive
+                                        The last of our blood we will give
+
+                                You can add the mode "1" or "2" to make the color bold (brighter) or dim (darker):
+                                    "\x1B[31mNormal Text. \x1B[0m\x1B[1;31mBold Text. \x1B[0m\x1B[2;31mDim Text. \x1B[0m\n"  // normal, bold, and dim.
+                                    ...
+                                    Normal Text. Bold Text. Dim Text.
+
+                                Terminals that support the aixterm specification, have codes 90-97 (foreground) and 100-107 (background) assigned for brighter versions of the basic 8 colors, so you can use them instead of adding "1;" to the standard color code:
+                                    "\x1B[91;106mThe same as\x1B[0m \x1B[1;31;46mthis?\x1B[0m\n"  // Bright red and cyan VS Bright red and cyan. In my terminal,
+                                                                                                //  the first varint isn't as bright as the second one.
+                                    ...
+                                    The same as this?
+
+                                256 Colors:
+                                    If you write "ESC[38;5;{ID}m" or "ESC[48;5;{ID}m", and use some number from 0 to 255 instead of "{ID}", you can set the color of the foreground or background to one of the colors from the set of 256 colors.
+
+                                    0-15 colors are the original 16 colors (8 normal and 8 bright versions).
+                                    16-231 colors are formed by a 3bpc RGB value offset by 16, packed into a single value.
+                                    232-255 are gray-scale starting from a shade slightly lighter than black, ranging up to shade slightly darker than white.
+                                    Some emulators interpret these steps as linear increments (256 / 24) on all three channels, although some emulators may explicitly define these values.
+
+                                    Example:
+                                        "\x1B[38;5;221m221\x1B[0m \x1B[48;5;90m90\x1B[0m "  // 221 is like gold, and 90 is purple.
+                                        "\x1B[38;5;221;37m221;35\x1B[0m "  // Adding another value after the ID invalidates the sequence.
+                                        "\x1B[5;38;221m5;38;221\x1B[0m "  // Writing 5 before 38 activates the 5th mode (blinking).
+                                        "\x1B[38m38\x1B[0m "  // 38 without 5 does nothing.
+                                        "\x1B[38m\x1B[5;221m38;5;221\x1B[0m "  //  38 isn't preserved if 5 is written in a separate sequence, meaning that 38 isn't a mode by itself.
+                                        "\x1B[5m\x1B[7m5;7\x1B[0m "  // 5 is preserved when another sequence is added.
+                                        "\n"
+                                        ...
+                                        221 90 221;35 5;38;221 38 38;5;221 5;7
+
+                                RGB Colors:
+                                    Modern terminals support the Truecolor (24-bit RGB), which allows to set the foreground and background colors using RGB.
+
+                                    The foreground RGB color can be set via ESC[38;2;{R};{G};{B}m, and the background can be set via ESC[48;2;{R};{G};{B}m, where instead of {R}, {G}, and {B}, one needs to specify the RGB values.
+
+                                    Example:
+                                        "\x1B[38;2;233;61;216m\x1B[48;2;0;0;51mFire, burn?\x1B[0m "  // Sets the foreground to purple, and the background to dark blue.
+                                        "\x1B[38;2;23;61;216;48;2;0;0;51mThe Fire Burns Forever\x1B[0m "  // You can actually set them both in a single sequence.
+                                        "\x1B[38;2;23;211;21;" "48;2;157;23;11;" "9" "mFire, burn?\x1B[0m "  // You can combine them with other modes in a single sequence.
+                                        "\x1B[38;5;221;" "48;5;90;" "3" "mThe fire burns Forever more\x1B[0m "  // It also works this way with the 256 colors one.
+                                        "\n"
+                                        ...
+                                        Fire, burn? The Fire Burns Forever Fire, burn? The fire burns Forever more
+
+                        Screen Modes:
+                            Set Mode:
+                                "ESC[={value}h" Changes the screen width or type to the mode specified by value.
+
+                                "ESC[={value}l" Resets the mode by using the same values that Set Mode uses, except for 7, which disables line wrapping.
+
+                                The screen size changing modes do nothing in my terminal.
+
+                                Example:
+                                    "\x1B[=7l";  // It should disable line wrapping, but, in my terminal, it doesn't.
+                                    for (auto i = 0; i != 50; ++i)
+                                        cout << "What? ";
+                                    cout << "\n";
+                                    ...
+                                    What? What? What? What? What? What? What? What? What? What? What? What? What? What? What? What? What? What? What? What? What? What? What? What? What? What? What? What? What? What? What? What? What? What? What? What? What? What? What? What? What? What? What? What? What? What? What? What? What? What?
+
+                            Common Private Modes:
+                                These aren't a part of the specification, but are implemented in most terminals.
+
+                                ESC[?25l makes cursor invisible, and ESC[?25h makes cursor visible:
+                                    cout << "\x1B[?25lI'm invisible! " << flush;  // Make cursor invisible.
+                                    this_thread::sleep_for(chrono::seconds(1));
+                                    cout << "\x1B[?25hI'm visible." << flush;  // Make cursor visible.
+                                    this_thread::sleep_for(chrono::seconds(1));
+                                    ...
+                                    I'm invisible! I'm visible.
+                                It works in my terminal.
+
+                                ESC[?47h saves screen, and ESC[?47l restores screen:
+                                    cout << "\x1B[?47h"  // Save the current screen.
+                                        "UGGJFJF29aJkfjsdkfjh" << flush;  // Write some gibberish.
+                                    this_thread::sleep_for(chrono::seconds(5));
+                                    cout << "\x1B[?47l";  // Restore screen.
+                                    ...
+                                In my terminal, it indeed saves and restores the screen, but for some reason, after saving the screen, terminal starts to consider the presses to buttons of my mouse as some text input, not allowing me to scroll the text.
+
+                                ESC[?1049h enables the alternative buffer, and ESC[?1049l disables the alternative buffer. An alternative buffer is simply a different screen. You can read and write characters to it. After disabling it, the normal screen returns, as if nothing happened:
+                                    cout << "\x1B[?1049hWhy we still here? Just to suffer? " << flush;  // Activate the alternative buffer and write something to it.
+                                    string buf1;
+                                    cin >> buf1;  // Input something.
+                                    cout << buf1;  // Output it.
+                                    this_thread::sleep_for(chrono::seconds(5));
+                                    cout << "\x1B[?1049l\n";  // Disable the alternative buffer. The text from the alternative terminal has gone now.
+                                    ...
+                                A thing to note, is that in my terminal, the characters written by me during the alternative screen are executed as a command in my normal screen after disabling the screen, but characters written to the input (cin) don't remain. Thus, you should write characters only when there is an input listening for them.
+
+                                Some of these modes may not work in terminal multiplexers like tmux.
+
+                        Keyboard Strings:
+                            ESC[{code};{string};{...}p allows to redefine some keyboard key to some string. {code} is the code of the key, which is either a single number, or several numbers delimited by semicolons. {string} is either an ASCII code for a single character or a string enclosed in quotation marks (65 == "A"). {...} means that you can bind writing of several characters at once, if you delimit their numbers by semicolons:
+                                cout << "\x1B[97;\"What?\"pA A A\n" << flush;  // Bind the string "What?" to "A".
+                                ...
+                                hat?"pA A A
+
+                            As you can see, my terminal doesn't recognize this as a valid sequence, and stops interpreting it at "W".
+
+                            Wikipedia says:
+                                CSI 0 ; 6 8 ; "DIR" ; 13 p — This reassigns the key F10 to send to the keyboard buffer the string "DIR" and ENTER, which in the DOS command line would display the contents of the current directory. (MS-DOS ANSI.SYS only) This was sometimes used for ANSI bombs.
+
+                            I guess this feature was in ANSI.SYS for DOS, but it doesn't present in Konsole.
+
+                    I guess that this functional is what things like Nano the text editor use to implement their interface:
+                        >> nano
+                        Calls ESC[?1049h to get into alternative buffer.
+                        Uses ESC[m to write its interface on the white background.
+                        Does \x1B[{line};{column}H to set the cursor to the top of the page.
+                        But how does it listen to the keyboard? Wait. Do you remember, that the text written without input is preserved after the alternative screen? Nano doesn't leave any reminders after being closed. Does it mean that the whole text space is actually a text input, that is being sent to Nano? It would explain how the keybinding is implemented.
+
+                    More Info:
+                        XTerm Control Sequences:
+                            https://invisible-island.net/xterm/ctlseqs/ctlseqs.html
+
+                            XTerm is the standard terminal emulator for the X Window System. The X Window System (X11, or simply X) is a windowing system for bitmap displays, common on Unix-like operating systems. Many users use X with a desktop environment. Popular desktop environments include GNOME, KDE Plasma and Xfce. Thus, XTerm is the base for almost all terminals running under the X Window System, and the KDE Plasma uses it as its base, so Konsole uses XTerm as its base, so things applied to XTerm are also applied to Konsole, and many other terminals.
+
+                        VT100 – Various terminal manuals:
+                            https://vt100.net/
+
+                            Manuals for physical terminals. Terminal emulators emulate them, so manuals for physical terminals can also be applied to them.
+
+                        HyperLinks in Terminal:
+                            https://gist.github.com/egmontkob/eb114294efbcd5adb1944c9f3cb5feda
+
+                    There is still a long way to go.
+
+            What can I say after learning about how to overwrite already printed characters? The second method most likely will have a significant overhead, because I would need to make the cursor jump from the currently last character to the character that represents the current count of found words at the beginning, overwrite the count, jump back to the last character, write another line, and repeat the whole cycle n times, with each time being longer than the previous, because the cursor will have more and more characters to go through each time.
+            The better use for the real-time iteration and print concept would be to first print all the lines, and only then print the word count at the end. But it contradicts with the original problem description.
+
+            Cumulative Text-Query Program:
+                Let's first implement the first design of the text-query program, because it's the simplest and the most obvious one.
+
+                If You Forget:
+                    Go through the text line by line, counting lines, searching for the target word to appear, counting word appearances, adding the number of the line as the key, and the text of the line as the value of the item, adding the item to the ordered map, and when all the lines are processed, print the count of found words, and all the items of the map in their order of insertion.
+
+                I will use istream_line_iterator = std::istream_iterator<Line<std::basic_istream<char>, std::string>> to iterate through the istream's lines. This is necessary, because it allows me to use the same function for iteration of strings from a file stream and from a container. From now on, I will think of the input as of a pair of iterators that yield strings.
+
+                After obtaining the count of word appearances, and the table with line numbers and lines in which the word appeared, the data easily can be printed in the desired format by iterating through the table, and calling std::cout. It easily can be implemented as a separate function. Let's call it "template<typename OStream, typename String, typename Count, typename LMap> void print_cl(OStream &ostream, const String &word, Count count, const LMap &f_lines)".
+
+                Thus, We Have the Next Problem Left:
+                    Input:
+                        An iterator that yields std::string objects.
+                    Output:
+                        The target word's appearances' count, a table with the line number as the key, and the string in which the target word appeared as the value — iteration of which yields them in the sorted manner from the first to the last string.
+                    Declaration:
+                        {count, map} query_word(line_iterator, word)
+
+                query_word can be achieved by having the count of words, the count of strings, and the map — iterating through the input iterator, increasing the string count, then iterating through the string to find every word's appearance, increasing the word count with each word found, and if any word is found on this string, adding the string number and the string to the map. After going through the iterator, the function returns the map, and the count of words.
+
+                It Leads Us to These Questions:
+                    - What will be the interface of the query_word? Where the counts and the map are created? How are they returned? Which map should it use?
+                    - How to search for the word appearances in a string? How to count them?
+
+                What will be the interface of the query_word?:
+                    I guess I should first decide on some guiding principles for my program, because there are many approaches I can take, and they all will work, but I can decide only on one of them.
+
+                    The Priciples Are:
+                        Efficiency: The program should be as fast, and take as little memory, as possible.
+                        Reusability: Each unit of the program needs to be made in such way so it could be reused in the greatest number of different tasks possible, without modifying the code of it.
+                        The efficiency has the greater priority than reusability only if it has enough significance.
+                        Simplicity of the interface: The interface for using it should be as concise and obvious as possible. It's better to be obvious than concise. It's better to be reusable or efficient than simple.
+
+                    To make query_word() as reusable as possible: - It needs to be able to be used with any type of the iterator, count, and map, so it should be a template with types of these things as its arguments. - Allow for separate processing of the input in several calls, by not creating a new map and counts on each call, and by using some already existing ones.
+                    It leads us to either create it as a class, which creates the map and counts on initialization, and reuses them for each call of the object — or create it as a function that takes references to counts and maps at each call.
+
+                    The "class" approach provides greater simplicity, because you just need to create an object, and the initializer of it will create the rest of things automatically, when the "function" approach moves the burden of creating all maps and counts to the outer world.
+                    But the "function" approach provide greater reusablility, because there may be situations where I want to use the same counts, but a different map — which is easy to do with the "function" approach, but harder with the "class", because it would require me to reinitialize a part of the object's stack on each substitution.
+                    By the way — efficiency. A method most likely will refer to the address of a value by a margin from the object's address. But from where will it get the object's address? Most likely from the pointer to the object, passed as an argument. A function will use references, which are pointers to objects — thus I guess that both approaches are on the same level of indirection. But I may be wrong, because I don't know how it all works in each compiler exactly. If they're on the same level of efficiency, then I should take the "function" approach, because it has higher reusability. If you think about it — I may pass and return one count by value, which will be faster than accessing it by reference.
+
+                    OK, if you think about it, thus whole search of the most effective variant doesn't really matter, because I won't ever use this function for parsing data of a significant size. So let's just stick to the "function" approach, and make counts and maps be parsed by reference, because this approach is the most reusable one.
+
+                    Thus:
+                        template<typename SIter, typename String, typename Count1, typename Count2, typename LMap> void query_word(SIter begin, SIter end, String word, Count1 &count_l, Count2 &count_wa, LMap &f_lines)
+                        { /* begin: the input iterator with strings. end: the end iterator. word: the target word. count_l: The lines' count. count_wa: The word's appearances' count. f_lines: the map for found lines. */ }
+
+                    OK, I probably should have made this as a class, because inserting these things on every call is kind of tiresome, but let's stick to this choice for now.
+
+                How to search for word appearances in a string?:
+                    The most obvious solution is to use the "size_type .find(str, pos)" method of the string class, which searches for the str in the string, starting from the character at the pos, and either returns the position of the first character of the str, or ::npos, if none is found.
+
+                    To count words with it, I need to have variables for the current position —which should start at 0— and the count of words on this string, use the word as the str and the current position as the pos, check if the output is the npos or not, increment the local count of words, set the current position as the output+1, and call .find() again. Once it hit npos, the program checks if the count of words is greater than 0 or not. If it isn't, it updates the count of lines, and goes to the next string. If it's, the local count is added to the global, the string and its number is added to the map, line count is updated, and the next line is taken.
+
+                It looks like all the parts of the query_word are defined, so now I need to implement the print_cl and query_word functions.
+
+                I implemented the print_cl and query_word, and also the word_query_file, which reads the data from a file into the query_word, and then displays the result with print_cl.
+
+                Now I only need to make it as a program that can be called from a terminal, with the target file and word being specified as CLI arguments:
+                    All the functional of the program is already implemented through the word_query_file, so word_query_main only need to read the CLI arguments, validate them, and convert into the input appropriate for word_query_file.
+
+                    I want to make a test for it, and use different maps, so it's better to make the LMap and OStream types as the template arguments, and take the &ostream as an arguments, so I could call it with either the std::cout —to make it print into the stdout— or into the std::ostringstream —to be able to check the printed resulting during the test—.
+                    The input arguments for the program call can be accessed by the main function through the (int argc, char* argv[]) arguments. I guess I can just copy them into the word_query_main in the same way.
+                    It's better to give user a feedback about their arguments being invalid, so it's better to make the function to return the exit code with either 0 or an error, and make the main function to return it.
+
+                    To make everything easier, let's make the rule that there only can be two arguments specified, and they both have to be specified: the path to the file and the target word.
+                    The only validation needed is the validation of the number of the arguments, because the OS already validates the file path on the open system call, and a word can have any content inside.
+                    Thus, the only thing left is to convert the arguments from character arrays into strings, and then call the word_query_file on them.
+                    If you think about it, it's better to use the error output stream for the message about invalid input, so let's take it as a separate stream.
+
+                    Thus, the interface now is:
+                        template<typename LMap, typename OStream, typename EStream> int word_query_main(OStream &ostream, EStream &estream, int argc, char* argv[])
+
+                The word_query_main is done. The only thing left is to make a .cpp file that calls the word_query_main in its main, and make a script to build it.
+
+                main.cpp, build.sh, and use.sh are done:
+                    $ ./word_query/imp1/build.sh ; ./word_query/imp1/use.sh
+                    something occurs 5 times
+                        (line 2) something some other text
+                        (line 4) some other text something
+                        (line 6) put something in the middle
+                        (line 7) another something after something
+
+                I guess the program can be considered done.
