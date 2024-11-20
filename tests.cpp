@@ -12,10 +12,10 @@
 using namespace std;
 using test_function = bool(*)();
 
-const string file_path = __FILE__;
+// "./" makes the .find_last_of() point on "./" if there weren't any other slashes inside.
+const string file_path = "./" + string(__FILE__);
 const string current_dir = file_path.substr(0, file_path.find_last_of("/\\"));
 const string path_to_text = current_dir + "/text.txt";
-
 
 #define TARGET_RESULT_INPUT_1  \
     vector<string> target = {"The first line.", "The second line.", "The third line."},  \
