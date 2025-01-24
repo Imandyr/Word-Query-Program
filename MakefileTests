@@ -1,0 +1,11 @@
+# Builds tests.cpp using G++ as the "bin/tests" file.
+LDFLAGS = -rdynamic -Og
+CFLAGS = $(LDFLAGS)
+
+bin/tests : src/tests.cpp src/tqp.hpp
+	mkdir -p bin
+	g++ $(CFLAGS) -o bin/tests src/tests.cpp
+
+.PHONY : clear
+clean :
+	rm bin/tests
